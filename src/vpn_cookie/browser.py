@@ -67,11 +67,14 @@ def login_and_extract_cookie(config: AppConfig, password: str | None = None, tim
         launch_args = {
             "headless": False,
             "viewport": {"width": config.browser.width, "height": config.browser.height},
+            "user_agent": config.browser.useragent,
             "args": [
                 f"--app={config.vpn_url}",
                 "--window-size=%d,%d" % (config.browser.width, config.browser.height),
             ],
         }
+        if not config.browser.useragent:
+            launch_args.pop("user_agent")
         if config.browser.executable_path:
             launch_args["executable_path"] = config.browser.executable_path
         context = playwright.chromium.launch_persistent_context(user_data_dir, **launch_args)

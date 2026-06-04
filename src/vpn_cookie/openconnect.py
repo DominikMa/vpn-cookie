@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
 
 from vpn_cookie.config import AppConfig
 
@@ -25,8 +26,10 @@ def openconnect_command(
     protocol: str = "anyconnect",
     use_sudo: bool = False,
     background: bool = False,
+    useragent: str | None = None,
     extra_args: list[str] | None = None,
 ) -> list[str]:
+    effective_useragent = useragent if useragent is not None else config.openconnect.useragent
     command = [
         executable,
         f"--protocol={protocol}",
@@ -34,6 +37,8 @@ def openconnect_command(
     ]
     if config.username:
         command.insert(2, f"--user={config.username}")
+    if effective_useragent:
+        command.extend(["--useragent", effective_useragent])
     if background:
         command.append("--background")
     script = vpn_slice_script(config)
@@ -48,5 +53,6 @@ def openconnect_command(
 
 
 def run_openconnect(command: list[str], cookie: str) -> int:
+    print(f"Running: {shlex.join(command)}", file=sys.stderr)
     completed = subprocess.run(command, input=f"{cookie}\n", text=True, check=False)
     return completed.returncode

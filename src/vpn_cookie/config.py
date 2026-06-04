@@ -50,6 +50,7 @@ class BrowserConfig:
     width: int = 900
     height: int = 720
     executable_path: str | None = None
+    useragent: str | None = "AnyConnect"
 
 
 @dataclass
@@ -61,6 +62,11 @@ class RoutingConfig:
 
 
 @dataclass
+class OpenConnectConfig:
+    useragent: str | None = "AnyConnect"
+
+
+@dataclass
 class AppConfig:
     vpn_url: str = DEFAULT_VPN_URL
     username: str = ""
@@ -69,6 +75,7 @@ class AppConfig:
     password: PasswordConfig = field(default_factory=PasswordConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
+    openconnect: OpenConnectConfig = field(default_factory=OpenConnectConfig)
 
 
 def default_config_path() -> Path:
@@ -121,6 +128,7 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
     )
     browser = BrowserConfig(**data.get("browser", {}))
     routing = RoutingConfig(**data.get("routing", {}))
+    openconnect = OpenConnectConfig(**data.get("openconnect", {}))
     fields = {
         "vpn_url": data.get("vpn_url", DEFAULT_VPN_URL),
         "username": data.get("username", ""),
@@ -129,5 +137,6 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
         "password": password,
         "browser": browser,
         "routing": routing,
+        "openconnect": openconnect,
     }
     return AppConfig(**fields)

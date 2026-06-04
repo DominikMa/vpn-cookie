@@ -28,6 +28,12 @@ Run those two commands once for each key. Each key gets its own encrypted passwo
 
 Use `uv run vpn-cookie login` when you only want the raw cookie value on stdout. Use `uv run vpn-cookie connect` to retrieve the cookie and pass it to OpenConnect via `--cookie-on-stdin`; add `--sudo` when OpenConnect needs privileges to create the tunnel.
 
+`connect` passes `--useragent AnyConnect` to OpenConnect by default. Override it for one run with:
+
+```bash
+uv run vpn-cookie connect --useragent CustomUA --sudo
+```
+
 ## Split routes
 
 OpenConnect applies routes through its vpnc script. To route only selected networks or hosts through the VPN, install `vpn-slice` and configure routes:

@@ -141,6 +141,11 @@ def connect(
     timeout: int = typer.Option(300, "--timeout", help="Seconds to wait for the VPN cookie."),
     openconnect: str = typer.Option("openconnect", "--openconnect", help="OpenConnect executable."),
     protocol: str = typer.Option("anyconnect", "--protocol", help="OpenConnect protocol."),
+    useragent: Optional[str] = typer.Option(
+        None,
+        "--useragent",
+        help="Override OpenConnect User-Agent. Uses config value by default.",
+    ),
     sudo: bool = typer.Option(False, "--sudo", help="Run OpenConnect through sudo."),
     background: bool = typer.Option(False, "--background", "-b", help="Ask OpenConnect to background after startup."),
     extra_arg: list[str] = typer.Option(
@@ -157,6 +162,7 @@ def connect(
         config,
         executable=openconnect,
         protocol=protocol,
+        useragent=useragent,
         use_sudo=sudo,
         background=background,
         extra_args=extra_arg,
