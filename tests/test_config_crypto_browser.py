@@ -23,6 +23,7 @@ def test_config_roundtrip(tmp_path):
     assert loaded.openconnect.useragent == "AnyConnect"
     assert loaded.routing.mode == "vpn-slice"
     assert loaded.routing.include == ["10.0.0.0/8"]
+    assert loaded.routing.disable_ipv6 is True
 
 
 def test_password_encryption_roundtrip():
@@ -165,10 +166,22 @@ def test_openconnect_command_uses_configured_vpn_slice_routes():
         "--cookie-on-stdin",
         "--useragent",
         "AnyConnect",
+        "--disable-ipv6",
         "--script",
         "vpn-slice 10.0.0.0/8 %10.1.2.0/24",
         "https://vpn.example.test",
     ]
+
+
+def test_openconnect_command_can_keep_ipv6_for_vpn_slice():
+    config = AppConfig(username="alice", vpn_url="https://vpn.example.test")
+    config.routing.mode = "vpn-slice"
+    config.routing.include = ["10.0.0.0/8"]
+    config.routing.disable_ipv6 = False
+
+    command = openconnect_command(config)
+
+    assert "--disable-ipv6" not in command
 
 
 def test_openconnect_command_can_disable_useragent():

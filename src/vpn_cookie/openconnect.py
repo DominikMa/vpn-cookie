@@ -20,6 +20,10 @@ def vpn_slice_script(config: AppConfig) -> str | None:
     )
 
 
+def _has_openconnect_arg(command: list[str], option: str) -> bool:
+    return option in command
+
+
 def openconnect_command(
     config: AppConfig,
     *,
@@ -43,6 +47,8 @@ def openconnect_command(
     if background:
         command.append("--background")
     script = vpn_slice_script(config)
+    if script and config.routing.disable_ipv6 and not _has_openconnect_arg(command, "--disable-ipv6"):
+        command.append("--disable-ipv6")
     if script:
         command.extend(["--script", script])
     if extra_args:

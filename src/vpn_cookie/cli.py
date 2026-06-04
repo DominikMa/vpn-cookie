@@ -116,12 +116,19 @@ def routes() -> None:
     multiple=True,
     help="Extra argument passed to vpn-slice. Repeat for multiple arguments.",
 )
+@click.option(
+    "--disable-ipv6/--allow-ipv6",
+    default=True,
+    show_default=True,
+    help="Pass --disable-ipv6 to OpenConnect when using vpn-slice.",
+)
 @_handle_errors
 def routes_set(
     route_values: tuple[str, ...],
     config_path: Path | None,
     vpn_slice: str,
     vpn_slice_arg: tuple[str, ...],
+    disable_ipv6: bool,
 ) -> None:
     """Configure split-tunnel routes through vpn-slice."""
     config = _load(config_path)
@@ -129,6 +136,7 @@ def routes_set(
     config.routing.include = list(route_values)
     config.routing.vpn_slice = vpn_slice
     config.routing.vpn_slice_args = list(vpn_slice_arg)
+    config.routing.disable_ipv6 = disable_ipv6
     path = save_config(config, config_path)
     click.echo(f"Wrote vpn-slice routes to: {path}")
 
@@ -154,6 +162,7 @@ def routes_show(config_path: Path | None) -> None:
     click.echo(f"mode: {config.routing.mode}")
     if config.routing.mode == "vpn-slice":
         click.echo(f"vpn_slice: {config.routing.vpn_slice}")
+        click.echo(f"disable_ipv6: {config.routing.disable_ipv6}")
         for route in config.routing.include:
             click.echo(route)
 

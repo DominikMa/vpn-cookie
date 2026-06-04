@@ -59,6 +59,7 @@ class RoutingConfig:
     include: list[str] = field(default_factory=list)
     vpn_slice: str = "vpn-slice"
     vpn_slice_args: list[str] = field(default_factory=list)
+    disable_ipv6: bool = True
 
 
 @dataclass

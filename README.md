@@ -6,11 +6,8 @@ It is built for portals where browser login, SSO, Duo Push, or MFA is easier tha
 
 ## Features
 
-- Fresh, temporary Chromium profile for every login.
 - Optional username and password prefill.
-- Optional password encryption backed by one or more FIDO2 keys with `hmac-secret`.
-- Raw cookie output for piping into other tools.
-- OpenConnect integration using `--cookie-on-stdin`.
+- Optional password encryption backed by FIDO2 keys with `hmac-secret`.
 - Optional split-tunnel routing through `vpn-slice`.
 
 ## Requirements
@@ -28,13 +25,17 @@ On Fedora, the system tools are typically:
 sudo dnf install openconnect
 ```
 
-Install `vpn-slice` from your distribution if available, or from upstream:
-
-```bash
-python3 -m pip install --user "vpn-slice[dnspython,setproctitle]"
-```
+Install `vpn-slice` from your distribution if available, or from upstream via pip.
 
 ## Install
+
+To install `vpn-cookie` as a user-wide command directly from GitHub:
+
+```bash
+uv tool install git+https://github.com/DominikMa/vpn-cookie.git
+uvx playwright install chromium
+vpn-cookie --help
+```
 
 For development from this checkout:
 
@@ -44,24 +45,10 @@ uv run playwright install chromium
 uv run vpn-cookie --help
 ```
 
-To install `vpn-cookie` as a user-wide command from this checkout:
+To install from the local checkout instead:
 
 ```bash
 uv tool install .
-uvx playwright install chromium
-vpn-cookie --help
-```
-
-After code changes, reinstall the tool:
-
-```bash
-uv tool install --reinstall .
-```
-
-From a published Git repository, use:
-
-```bash
-uv tool install git+https://example.invalid/owner/vpn-cookie.git
 ```
 
 ## First Run
@@ -104,13 +91,6 @@ Login and start OpenConnect:
 vpn-cookie connect --sudo
 ```
 
-The cookie is passed to OpenConnect via `--cookie-on-stdin`, so it is not exposed in the printed command line or process list.
-
-Both the browser and OpenConnect use `AnyConnect` as their user agent by default. Override the OpenConnect user agent for one run:
-
-```bash
-vpn-cookie connect --useragent CustomUA --sudo
-```
 
 ## Password Prefill
 
