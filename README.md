@@ -113,7 +113,7 @@ The plaintext password is never written to disk.
 
 OpenConnect calls a vpnc-compatible script to configure local routes and DNS after the tunnel comes up. By default that is usually `vpnc-script`.
 
-`vpn-slice` is a replacement script that only routes selected networks or hostnames through the VPN. `vpn-cookie` can configure OpenConnect to use it through `--script 'vpn-slice ...'`.
+`vpn-slice` is a replacement script that only routes selected networks or hostnames through the VPN. `vpn-cookie` configures OpenConnect to use it through `--script 'vpn-slice ...'`.
 
 Generic example:
 
@@ -127,6 +127,12 @@ Uni Lübeck example:
 ```bash
 vpn-cookie routes set 10.8.20.0/24 imi.uni-luebeck.de 141.83.0.0/16
 vpn-cookie connect --sudo
+```
+
+When `vpn-slice` routing is enabled, `vpn-cookie` passes `--disable-ipv6` to OpenConnect by default. Some Cisco gateways provide an IPv6 tunnel setup with an MTU below IPv6's minimum, which makes `vpn-slice` fail while running `ip -6 address add ...`. If your VPN's IPv6 setup is known to work, configure routes with:
+
+```bash
+vpn-cookie routes set --allow-ipv6 10.8.20.0/24 imi.uni-luebeck.de 141.83.0.0/16
 ```
 
 Show configured routes:
