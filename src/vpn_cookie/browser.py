@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import time
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 from urllib.parse import urlparse
+import shutil
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -66,8 +67,9 @@ def _click_first(page, selectors: list[str]) -> bool:
 
 def login_and_extract_cookie(config: AppConfig, password: str | None = None, timeout_seconds: int = 300) -> str:
     context = None
+    user_data_dir = mkdtemp(prefix="vpn-cookie-chromium-")
     try:
-        with sync_playwright() as playwright, TemporaryDirectory(prefix="vpn-cookie-chromium-") as user_data_dir:
+        with sync_playwright() as playwright:
             launch_args = {
                 "headless": False,
                 "viewport": {"width": config.browser.width, "height": config.browser.height},
@@ -120,3 +122,4 @@ def login_and_extract_cookie(config: AppConfig, password: str | None = None, tim
                 context.close()
             except PlaywrightError:
                 pass
+        shutil.rmtree(user_data_dir, ignore_errors=True)
