@@ -5,6 +5,7 @@ import subprocess
 import sys
 
 from vpn_cookie.config import AppConfig
+from vpn_cookie.errors import OpenConnectError
 
 
 def vpn_slice_script(config: AppConfig) -> str | None:
@@ -54,5 +55,21 @@ def openconnect_command(
 
 def run_openconnect(command: list[str], cookie: str) -> int:
     print(f"Running: {shlex.join(command)}", file=sys.stderr)
-    completed = subprocess.run(command, input=f"{cookie}\n", text=True, check=False)
+    try:
+        completed = subprocess.run(command, input=f"{cookie}\n", text=True, check=False)
+    except FileNotFoundError as error:
+        raise OpenConnectError(
+            f"Could not start {command[0]!r}. Install OpenConnect or pass --openconnect with the executable path."
+        ) from error
+    except PermissionError as error:
+        raise OpenConnectError(
+            f"Could not execute {command[0]!r}: permission denied. Check the executable path or use --sudo."
+        ) from error
+    except OSError as error:
+        raise OpenConnectError(f"Could not start OpenConnect: {error}") from error
+    if completed.returncode != 0:
+        raise OpenConnectError(
+            f"OpenConnect exited with status {completed.returncode}. "
+            "Check the output above for the VPN gateway's reason."
+        )
     return completed.returncode

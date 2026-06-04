@@ -4,10 +4,12 @@ import time
 from tempfile import TemporaryDirectory
 from urllib.parse import urlparse
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 from vpn_cookie.config import AppConfig
+from vpn_cookie.errors import BrowserError
 
 USERNAME_SELECTORS = [
     'input[name="username"]',
@@ -63,23 +65,24 @@ def _click_first(page, selectors: list[str]) -> bool:
 
 
 def login_and_extract_cookie(config: AppConfig, password: str | None = None, timeout_seconds: int = 300) -> str:
-    with sync_playwright() as playwright, TemporaryDirectory(prefix="vpn-cookie-chromium-") as user_data_dir:
-        launch_args = {
-            "headless": False,
-            "viewport": {"width": config.browser.width, "height": config.browser.height},
-            "user_agent": config.browser.useragent,
-            "args": [
-                f"--app={config.vpn_url}",
-                "--window-size=%d,%d" % (config.browser.width, config.browser.height),
-            ],
-        }
-        if not config.browser.useragent:
-            launch_args.pop("user_agent")
-        if config.browser.executable_path:
-            launch_args["executable_path"] = config.browser.executable_path
-        context = playwright.chromium.launch_persistent_context(user_data_dir, **launch_args)
-        page = context.pages[0] if context.pages else context.new_page()
-        try:
+    context = None
+    try:
+        with sync_playwright() as playwright, TemporaryDirectory(prefix="vpn-cookie-chromium-") as user_data_dir:
+            launch_args = {
+                "headless": False,
+                "viewport": {"width": config.browser.width, "height": config.browser.height},
+                "user_agent": config.browser.useragent,
+                "args": [
+                    f"--app={config.vpn_url}",
+                    "--window-size=%d,%d" % (config.browser.width, config.browser.height),
+                ],
+            }
+            if not config.browser.useragent:
+                launch_args.pop("user_agent")
+            if config.browser.executable_path:
+                launch_args["executable_path"] = config.browser.executable_path
+            context = playwright.chromium.launch_persistent_context(user_data_dir, **launch_args)
+            page = context.pages[0] if context.pages else context.new_page()
             if page.url == "about:blank":
                 page.goto(config.vpn_url, wait_until="domcontentloaded")
             else:
@@ -97,8 +100,23 @@ def login_and_extract_cookie(config: AppConfig, password: str | None = None, tim
                 if value:
                     return value
                 page.wait_for_timeout(1000)
-            raise TimeoutError(
-                f"Timed out waiting for cookie {config.cookie_name!r} from {parsed.netloc}."
+            raise BrowserError(
+                f"Timed out after {timeout_seconds}s waiting for cookie {config.cookie_name!r} from {parsed.netloc}. "
+                "Finish the VPN login in the browser, or increase --timeout."
             )
-        finally:
-            context.close()
+    except BrowserError:
+        raise
+    except PlaywrightError as error:
+        message = str(error)
+        if "closed" in message.lower() or "target page" in message.lower():
+            raise BrowserError(
+                "Browser was closed before the VPN cookie was available. "
+                "Keep the login window open until the cookie has been extracted."
+            ) from error
+        raise BrowserError(f"Browser automation failed while logging in to {config.vpn_url}: {message}") from error
+    finally:
+        if context is not None:
+            try:
+                context.close()
+            except PlaywrightError:
+                pass

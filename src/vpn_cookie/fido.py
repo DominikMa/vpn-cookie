@@ -12,6 +12,7 @@ from fido2.hid import CtapHidDevice
 from fido2.server import Fido2Server
 
 from vpn_cookie.config import AppConfig, FidoCredentialConfig, b64decode, b64encode
+from vpn_cookie.errors import FidoError
 
 try:
     from fido2.pcsc import CtapPcscDevice
@@ -61,37 +62,57 @@ def _client(config: AppConfig) -> Any:
     if _use_windows_client():
         return WindowsClient(collector, allow_hmac_secret=True)
 
-    for device in _enumerate_devices():
-        client = Fido2Client(
-            device,
-            client_data_collector=collector,
-            user_interaction=CliInteraction(),
-            extensions=[HmacSecretExtension(allow_hmac_secret=True)],
-        )
-        if "hmac-secret" in client.info.extensions:
-            return client
-    raise RuntimeError("No FIDO2 authenticator with hmac-secret support was found.")
+    try:
+        devices = list(_enumerate_devices())
+    except Exception as error:
+        raise FidoError(f"Could not enumerate FIDO authenticators: {error}") from error
+
+    last_error: Exception | None = None
+    for device in devices:
+        try:
+            client = Fido2Client(
+                device,
+                client_data_collector=collector,
+                user_interaction=CliInteraction(),
+                extensions=[HmacSecretExtension(allow_hmac_secret=True)],
+            )
+            if "hmac-secret" in client.info.extensions:
+                return client
+        except Exception as error:
+            last_error = error
+    raise FidoError(
+        "No FIDO2 authenticator with hmac-secret support was found. "
+        "Connect a compatible key, or continue without password prefill."
+    ) from last_error
 
 
 def register_credential(config: AppConfig) -> AppConfig:
-    client = _client(config)
-    server = Fido2Server(
-        {"id": config.fido.rp_id, "name": config.fido.rp_name},
-        attestation="none",
-    )
-    user = {"id": os.urandom(16), "name": config.username or "vpn-user"}
-    options, _state = server.register_begin(
-        user,
-        resident_key_requirement="discouraged",
-        user_verification="discouraged",
-        authenticator_attachment="cross-platform",
-    )
-    result = client.make_credential(
-        {
-            **options["publicKey"],
-            "extensions": {"hmacCreateSecret": True},
-        }
-    )
+    try:
+        client = _client(config)
+        server = Fido2Server(
+            {"id": config.fido.rp_id, "name": config.fido.rp_name},
+            attestation="none",
+        )
+        user = {"id": os.urandom(16), "name": config.username or "vpn-user"}
+        options, _state = server.register_begin(
+            user,
+            resident_key_requirement="discouraged",
+            user_verification="discouraged",
+            authenticator_attachment="cross-platform",
+        )
+        result = client.make_credential(
+            {
+                **options["publicKey"],
+                "extensions": {"hmacCreateSecret": True},
+            }
+        )
+    except FidoError:
+        raise
+    except Exception as error:
+        raise FidoError(
+            "FIDO registration failed. Make sure the key stays connected, touch it when prompted, "
+            f"and retry. Details: {error}"
+        ) from error
     if not result.client_extension_results.get("hmacCreateSecret"):
         print(
             "Warning: the authenticator did not confirm hmac-secret creation; continuing anyway.",
@@ -110,24 +131,30 @@ def register_credential(config: AppConfig) -> AppConfig:
 
 def derive_secret_for_credential(config: AppConfig, credential: FidoCredentialConfig, client: Any | None = None) -> bytes:
     client = client or _client(config)
-    result = client.get_assertion(
-        {
-            "rpId": config.fido.rp_id,
-            "challenge": os.urandom(32),
-            "allowCredentials": [
-                {
-                    "type": "public-key",
-                    "id": b64decode(credential.credential_id),
-                }
-            ],
-            "userVerification": "discouraged",
-            "extensions": {
-                "hmacGetSecret": {
-                    "salt1": b64decode(credential.hmac_salt),
-                }
-            },
-        }
-    ).get_response(0)
+    try:
+        result = client.get_assertion(
+            {
+                "rpId": config.fido.rp_id,
+                "challenge": os.urandom(32),
+                "allowCredentials": [
+                    {
+                        "type": "public-key",
+                        "id": b64decode(credential.credential_id),
+                    }
+                ],
+                "userVerification": "discouraged",
+                "extensions": {
+                    "hmacGetSecret": {
+                        "salt1": b64decode(credential.hmac_salt),
+                    }
+                },
+            }
+        ).get_response(0)
+    except Exception as error:
+        raise FidoError(
+            "Could not derive the password key from this FIDO credential. "
+            "If the key was removed, reconnect it and retry."
+        ) from error
     extension_results = result.client_extension_results
     hmac_secret = getattr(extension_results, "hmac_get_secret", None)
     if hmac_secret is None and isinstance(extension_results, dict):
@@ -136,22 +163,25 @@ def derive_secret_for_credential(config: AppConfig, credential: FidoCredentialCo
     if output is None and isinstance(hmac_secret, dict):
         output = hmac_secret.get("output1")
     if not output:
-        raise RuntimeError("FIDO authenticator did not return an hmac-secret output.")
+        raise FidoError("FIDO authenticator did not return an hmac-secret output.")
     return output
 
 
 def derive_secret(config: AppConfig) -> tuple[FidoCredentialConfig, bytes]:
     if not config.fido.credentials:
-        raise ValueError("No FIDO credential is configured. Run `vpn-cookie fido-register` first.")
+        raise FidoError("No FIDO credential is configured. Run `vpn-cookie fido-register` first.")
 
     client = _client(config)
     last_error: Exception | None = None
     for credential in config.fido.credentials:
         try:
             return credential, derive_secret_for_credential(config, credential, client=client)
-        except Exception as error:
+        except FidoError as error:
             last_error = error
-    raise RuntimeError("No configured FIDO credential matched the connected authenticator.") from last_error
+    raise FidoError(
+        "No configured FIDO credential matched the connected authenticator. "
+        "Connect one of the registered keys, or enter the VPN password manually in the browser."
+    ) from last_error
 
 
 def try_derive_secret(config: AppConfig) -> tuple[FidoCredentialConfig, bytes] | None:

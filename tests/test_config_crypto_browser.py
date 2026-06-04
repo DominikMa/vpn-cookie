@@ -3,6 +3,7 @@ from __future__ import annotations
 from vpn_cookie.browser import cookie_value
 from vpn_cookie.config import AppConfig, FidoCredentialConfig, PasswordConfig, config_from_dict, load_config, save_config
 from vpn_cookie.crypto import decrypt_password, encrypt_password
+from vpn_cookie.errors import OpenConnectError
 from vpn_cookie.openconnect import openconnect_command, run_openconnect, vpn_slice_script
 
 
@@ -214,3 +215,34 @@ def test_run_openconnect_prints_command_without_cookie(monkeypatch, capsys):
             False,
         )
     ]
+
+
+def test_run_openconnect_reports_missing_executable(monkeypatch):
+    def fake_run(command, *, input, text, check):
+        raise FileNotFoundError(command[0])
+
+    monkeypatch.setattr("vpn_cookie.openconnect.subprocess.run", fake_run)
+
+    try:
+        run_openconnect(["missing-openconnect", "https://vpn.example.test"], "cookie")
+    except OpenConnectError as error:
+        assert "Could not start 'missing-openconnect'" in str(error)
+    else:
+        raise AssertionError("Expected OpenConnectError")
+
+
+def test_run_openconnect_reports_nonzero_exit(monkeypatch):
+    class Completed:
+        returncode = 7
+
+    def fake_run(command, *, input, text, check):
+        return Completed()
+
+    monkeypatch.setattr("vpn_cookie.openconnect.subprocess.run", fake_run)
+
+    try:
+        run_openconnect(["openconnect", "https://vpn.example.test"], "cookie")
+    except OpenConnectError as error:
+        assert "OpenConnect exited with status 7" in str(error)
+    else:
+        raise AssertionError("Expected OpenConnectError")
