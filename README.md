@@ -105,6 +105,8 @@ vpn-cookie fido-register
 vpn-cookie password set
 ```
 
+By default, registered FIDO credentials require authenticator user verification when deriving the password encryption key. This is enforced on the authenticator with the FIDO `credProtect` extension, so registration fails if the key cannot enforce that policy. To register a credential without that requirement, use `vpn-cookie fido-register --no-user-verification`.
+
 Repeat those two commands once for each FIDO key you want to use. Each key gets its own encrypted password entry.
 
 The plaintext password is never written to disk.

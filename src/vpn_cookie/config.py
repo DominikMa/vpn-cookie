@@ -42,6 +42,7 @@ class PasswordConfig:
 class FidoCredentialConfig:
     credential_id: str
     hmac_salt: str
+    user_verification: str = "required"
     password: PasswordConfig = field(default_factory=PasswordConfig)
 
 
@@ -110,6 +111,7 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
             FidoCredentialConfig(
                 credential_id=entry_data["credential_id"],
                 hmac_salt=entry_data["hmac_salt"],
+                user_verification=entry_data.get("user_verification", "required"),
                 password=entry_password,
             )
         )
@@ -118,6 +120,7 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
             FidoCredentialConfig(
                 credential_id=fido_data["credential_id"],
                 hmac_salt=fido_data["hmac_salt"],
+                user_verification=fido_data.get("user_verification", "required"),
                 password=password,
             )
         )

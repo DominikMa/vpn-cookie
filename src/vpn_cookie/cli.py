@@ -70,12 +70,19 @@ def show_config(config_path: Path | None) -> None:
 
 
 @app.command("fido-register")
+@click.option(
+    "--user-verification/--no-user-verification",
+    "require_user_verification",
+    default=True,
+    show_default=True,
+    help="Require authenticator user verification when deriving this credential's password key.",
+)
 @_config_option
 @_handle_errors
-def fido_register(config_path: Path | None) -> None:
+def fido_register(require_user_verification: bool, config_path: Path | None) -> None:
     """Register a FIDO credential for password encryption."""
     config = _load(config_path)
-    config = register_credential(config)
+    config = register_credential(config, require_user_verification=require_user_verification)
     path = save_config(config, config_path)
     click.echo(f"Registered FIDO credential and wrote config: {path}")
 

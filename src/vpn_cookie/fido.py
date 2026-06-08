@@ -7,7 +7,7 @@ from getpass import getpass
 from typing import Any, Iterable
 
 from fido2.client import DefaultClientDataCollector, Fido2Client, UserInteraction
-from fido2.ctap2.extensions import HmacSecretExtension
+from fido2.ctap2.extensions import CredProtectExtension, HmacSecretExtension
 from fido2.hid import CtapHidDevice
 from fido2.server import Fido2Server
 
@@ -74,7 +74,10 @@ def _client(config: AppConfig) -> Any:
                 device,
                 client_data_collector=collector,
                 user_interaction=CliInteraction(),
-                extensions=[HmacSecretExtension(allow_hmac_secret=True)],
+                extensions=[
+                    HmacSecretExtension(allow_hmac_secret=True),
+                    CredProtectExtension(),
+                ],
             )
             if "hmac-secret" in client.info.extensions:
                 return client
@@ -86,7 +89,20 @@ def _client(config: AppConfig) -> Any:
     ) from last_error
 
 
-def register_credential(config: AppConfig) -> AppConfig:
+def _user_verification_policy(require_user_verification: bool) -> str:
+    return "required" if require_user_verification else "discouraged"
+
+
+def register_credential(config: AppConfig, *, require_user_verification: bool = True) -> AppConfig:
+    user_verification = _user_verification_policy(require_user_verification)
+    extensions: dict[str, Any] = {"hmacCreateSecret": True}
+    if require_user_verification:
+        extensions.update(
+            {
+                "credentialProtectionPolicy": "userVerificationRequired",
+                "enforceCredentialProtectionPolicy": True,
+            }
+        )
     try:
         client = _client(config)
         server = Fido2Server(
@@ -97,13 +113,13 @@ def register_credential(config: AppConfig) -> AppConfig:
         options, _state = server.register_begin(
             user,
             resident_key_requirement="discouraged",
-            user_verification="discouraged",
+            user_verification=user_verification,
             authenticator_attachment="cross-platform",
         )
         result = client.make_credential(
             {
                 **options["publicKey"],
-                "extensions": {"hmacCreateSecret": True},
+                "extensions": extensions,
             }
         )
     except FidoError:
@@ -119,13 +135,17 @@ def register_credential(config: AppConfig) -> AppConfig:
             file=sys.stderr,
         )
     credential_id = b64encode(result.raw_id)
-    if not any(entry.credential_id == credential_id for entry in config.fido.credentials):
+    existing = next((entry for entry in config.fido.credentials if entry.credential_id == credential_id), None)
+    if existing is None:
         config.fido.credentials.append(
             FidoCredentialConfig(
                 credential_id=credential_id,
                 hmac_salt=b64encode(os.urandom(32)),
+                user_verification=user_verification,
             )
         )
+    else:
+        existing.user_verification = user_verification
     return config
 
 
@@ -142,7 +162,7 @@ def derive_secret_for_credential(config: AppConfig, credential: FidoCredentialCo
                         "id": b64decode(credential.credential_id),
                     }
                 ],
-                "userVerification": "discouraged",
+                "userVerification": credential.user_verification,
                 "extensions": {
                     "hmacGetSecret": {
                         "salt1": b64decode(credential.hmac_salt),
