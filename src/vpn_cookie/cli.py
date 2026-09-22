@@ -6,7 +6,7 @@ from functools import wraps
 import click
 
 from vpn_cookie.backends import available_password, configured_backend_names
-from vpn_cookie.browser import login_and_extract_cookie
+from vpn_cookie.browser import install_browser, login_and_extract_cookie
 from vpn_cookie.config import AppConfig, default_config_path, load_config, save_config
 from vpn_cookie.crypto import encrypt_password
 from vpn_cookie.errors import VpnCookieError
@@ -70,6 +70,14 @@ def show_config(config_path: Path | None) -> None:
     """Print the active config path."""
     path = config_path or default_config_path()
     click.echo(path)
+
+
+@app.command("install-browser")
+@_handle_errors
+def install_browser_command() -> None:
+    """Install the Chromium build that vpn-cookie's Playwright needs."""
+    install_browser()
+    click.echo("Chromium is installed.")
 
 
 @app.command("fido-register")

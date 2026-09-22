@@ -16,7 +16,7 @@ It is built for portals where browser login, SSO, Duo Push, or MFA is easier tha
 - Python 3.10+
 - `uv`
 - `openconnect`
-- Chromium installed through Playwright
+- Chromium, installed with `vpn-cookie install-browser`
 - Optional: `vpn-slice` for split routing
 - Optional: a FIDO2 key with `hmac-secret` support for password prefill
 - Optional: a hardware TPM 2.0 plus `tpm2-tools` for machine-bound password prefill on Linux
@@ -36,15 +36,17 @@ To install `vpn-cookie` as a user-wide command directly from GitHub:
 
 ```bash
 uv tool install git+https://github.com/DominikMa/vpn-cookie.git
-uvx playwright install chromium
+vpn-cookie install-browser
 vpn-cookie --help
 ```
+
+`vpn-cookie install-browser` downloads the Chromium build that this installation's Playwright expects, whether you installed with `uv tool`, `pipx`, `pip`, or a virtualenv. Run it once after installing and again after an upgrade that bumps Playwright.
 
 For development from this checkout:
 
 ```bash
 uv sync
-uv run playwright install chromium
+uv run vpn-cookie install-browser
 uv run vpn-cookie --help
 ```
 

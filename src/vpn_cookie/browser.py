@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shlex
+import subprocess
+import sys
 import time
 from tempfile import mkdtemp
 from urllib.parse import urlparse
@@ -30,6 +33,25 @@ SUBMIT_SELECTORS = [
     'button:has-text("Log in")',
     'button:has-text("Anmelden")',
 ]
+
+MISSING_BROWSER_HINT = (
+    "Chromium required by vpn-cookie is not installed.\n\nRun:\n\n    vpn-cookie install-browser"
+)
+
+
+def install_browser() -> None:
+    """Install the Chromium build Playwright expects, into this installation's environment."""
+    command = [sys.executable, "-m", "playwright", "install", "chromium"]
+    print(f"Running: {shlex.join(command)}", file=sys.stderr)
+    try:
+        completed = subprocess.run(command, check=False)
+    except OSError as error:
+        raise BrowserError(f"Could not run {shlex.join(command)}: {error}") from error
+    if completed.returncode != 0:
+        raise BrowserError(
+            f"Installing Chromium failed with exit status {completed.returncode}. "
+            "Check the output above."
+        )
 
 
 def cookie_value(cookies: list[dict], cookie_name: str) -> str | None:
@@ -122,7 +144,12 @@ def login_and_extract_cookie(
         raise
     except PlaywrightError as error:
         message = str(error)
-        if "closed" in message.lower() or "target page" in message.lower():
+        lowered = message.lower()
+        if not config.browser.executable_path and (
+            "executable doesn't exist" in lowered or "playwright install" in lowered
+        ):
+            raise BrowserError(MISSING_BROWSER_HINT) from error
+        if "closed" in lowered or "target page" in lowered:
             raise BrowserError(
                 "Browser was closed before the VPN cookie was available. "
                 "Keep the login window open until the cookie has been extracted."

@@ -108,3 +108,57 @@ def test_routes_set_can_allow_ipv6(tmp_path):
     assert config.routing.mode == "vpn-slice"
     assert config.routing.include == ["10.8.20.0/24"]
     assert config.routing.disable_ipv6 is False
+
+
+def test_install_browser_runs_playwright_in_this_interpreter(monkeypatch):
+    import subprocess
+    import sys
+
+    calls = []
+
+    def fake_run(command, *, check):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("vpn_cookie.browser.subprocess.run", fake_run)
+
+    result = CliRunner().invoke(app, ["install-browser"])
+
+    assert result.exit_code == 0
+    assert calls == [[sys.executable, "-m", "playwright", "install", "chromium"]]
+    assert "Chromium is installed." in result.output
+
+
+def test_install_browser_reports_a_failed_install(monkeypatch):
+    import subprocess
+
+    def fake_run(command, *, check):
+        return subprocess.CompletedProcess(command, 1)
+
+    monkeypatch.setattr("vpn_cookie.browser.subprocess.run", fake_run)
+
+    result = CliRunner().invoke(app, ["install-browser"])
+
+    assert result.exit_code == 1
+    assert "Installing Chromium failed with exit status 1" in result.output
+
+
+def test_login_points_at_install_browser_when_chromium_is_missing(monkeypatch, tmp_path):
+    from playwright.sync_api import Error as PlaywrightError
+
+    class FailingPlaywright:
+        def __enter__(self):
+            raise PlaywrightError(
+                "Executable doesn't exist at /home/user/.cache/ms-playwright/chromium-1234/chrome"
+            )
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr("vpn_cookie.browser.sync_playwright", lambda: FailingPlaywright())
+
+    result = CliRunner().invoke(app, ["login", "--config", str(tmp_path / "config.json")])
+
+    assert result.exit_code == 1
+    assert "Chromium required by vpn-cookie is not installed." in result.output
+    assert "vpn-cookie install-browser" in result.output
