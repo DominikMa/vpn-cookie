@@ -7,6 +7,7 @@ It is built for portals where browser login, SSO, Duo Push, or MFA is easier tha
 ## Features
 
 - Optional username and password prefill.
+- Headless login browser by default, with an optional visible window.
 - Optional password encryption backed by FIDO2 keys with `hmac-secret`.
 - Optional split-tunnel routing through `vpn-slice`.
 
@@ -18,6 +19,7 @@ It is built for portals where browser login, SSO, Duo Push, or MFA is easier tha
 - Chromium installed through Playwright
 - Optional: `vpn-slice` for split routing
 - Optional: a FIDO2 key with `hmac-secret` support for password prefill
+- Optional: a hardware TPM 2.0 plus `tpm2-tools` for machine-bound password prefill on Linux
 
 On Fedora, the system tools are typically:
 
@@ -26,6 +28,7 @@ sudo dnf install openconnect
 ```
 
 Install `vpn-slice` from your distribution if available, or from upstream via pip.
+Install `tpm2-tools` from your distribution if you want TPM password prefill.
 
 ## Install
 
@@ -91,23 +94,47 @@ Login and start OpenConnect:
 vpn-cookie connect --sudo
 ```
 
+The login browser runs headless by default, which works when the password is prefilled from a FIDO key or the TPM and the portal needs no further interaction. If you have to complete the login by hand, for example to enter the password manually or to answer an MFA prompt in the page, run it with a visible window:
+
+```bash
+vpn-cookie login --no-headless
+vpn-cookie connect --sudo --no-headless
+```
+
+To make a visible window the default, set `browser.headless` to `false` in the config file. `--headless` and `--no-headless` override that per run.
+
 
 ## Password Prefill
 
 Username and password prefill are optional.
 
-If no username is configured, no username is filled. If no registered FIDO key is connected, or the connected key has no saved password, the password field is left for manual entry.
+If no username is configured, no username is filled. If no registered FIDO key is connected, or the connected key has no saved password, the password field is left for manual entry. In that case run the login with `--no-headless` so you can type it.
 
 Register a FIDO key and store the password encrypted for that key:
 
 ```bash
 vpn-cookie fido-register
-vpn-cookie password set
+vpn-cookie password set --backend fido
 ```
 
 By default, registered FIDO credentials require authenticator user verification when deriving the password encryption key. This is enforced on the authenticator with the FIDO `credProtect` extension, so registration fails if the key cannot enforce that policy. To register a credential without that requirement, use `vpn-cookie fido-register --no-user-verification`.
 
 Repeat those two commands once for each FIDO key you want to use. Each key gets its own encrypted password entry.
+
+On Linux, you can register this machine's hardware TPM instead:
+
+```bash
+vpn-cookie tpm-register
+vpn-cookie password set --backend tpm
+```
+
+TPM password prefill requires Linux, `tpm2-tools`, and a real hardware TPM 2.0 exposed through `/dev/tpmrm0` or `/dev/tpm0`. Software TPMs such as `swtpm` or `mssim` are not supported for stored VPN passwords. The TPM credential is bound to this machine and is protected by the TPM PIN you choose during registration.
+
+The TPM path does not use encrypted TPM authorization sessions. That mainly matters against hardware sniffing of TPM traffic, especially on discrete TPMs, and is outside this tool's threat model. The VPN login still has separate MFA, and this feature only replaces typing the user's password into the browser.
+
+You may configure both FIDO and TPM. Registration is explicit: use `fido-register` for a removable FIDO key and `tpm-register` for this machine's TPM. When both are configured, use `password set --backend fido` or `password set --backend tpm` to choose where the encrypted password is stored. During login, TPM prefill is tried first, then FIDO, then manual entry.
+
+FIDO credentials are portable and can provide authenticator user verification and touch presence. TPM credentials are more convenient on one machine, but they are not portable, do not provide removable-key redundancy, and cannot give the same per-use physical-presence signal as touching a FIDO key. Always use a TPM PIN.
 
 The plaintext password is never written to disk.
 

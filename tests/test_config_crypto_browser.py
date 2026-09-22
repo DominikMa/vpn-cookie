@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from vpn_cookie.browser import cookie_value
-from vpn_cookie.config import AppConfig, FidoCredentialConfig, PasswordConfig, config_from_dict, load_config, save_config
+from vpn_cookie.config import (
+    AppConfig,
+    FidoCredentialConfig,
+    PasswordConfig,
+    TpmCredentialConfig,
+    config_from_dict,
+    load_config,
+    save_config,
+)
 from vpn_cookie.crypto import decrypt_password, encrypt_password
 from vpn_cookie.errors import OpenConnectError
 from vpn_cookie.openconnect import openconnect_command, run_openconnect, vpn_slice_script
@@ -73,6 +81,44 @@ def test_config_roundtrips_multiple_fido_passwords(tmp_path):
     loaded = load_config(path)
 
     assert loaded.fido.credentials == config.fido.credentials
+
+
+def test_config_roundtrips_tpm_credentials(tmp_path):
+    path = tmp_path / "config.json"
+    config = AppConfig()
+    config.tpm.device = "/dev/tpm0"
+    config.tpm.credentials = [
+        TpmCredentialConfig(
+            public="public",
+            private="private",
+            hmac_salt="salt",
+            password=PasswordConfig(nonce="nonce", ciphertext="ciphertext"),
+        )
+    ]
+
+    save_config(config, path)
+    loaded = load_config(path)
+
+    assert loaded.tpm.device == "/dev/tpm0"
+    assert loaded.tpm.credentials == config.tpm.credentials
+
+
+def test_config_roundtrips_browser_headless(tmp_path):
+    path = tmp_path / "config.json"
+    config = AppConfig()
+    assert config.browser.headless is True
+    config.browser.headless = False
+
+    save_config(config, path)
+
+    assert load_config(path).browser.headless is False
+
+
+def test_config_defaults_to_headless_when_key_is_absent():
+    config = config_from_dict({"browser": {"width": 100}})
+
+    assert config.browser.headless is True
+    assert config.browser.width == 100
 
 
 def test_cookie_value_finds_named_cookie():

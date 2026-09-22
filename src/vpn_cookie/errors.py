@@ -13,5 +13,9 @@ class FidoError(VpnCookieError):
     """FIDO credential or hmac-secret handling failed."""
 
 
+class TpmError(VpnCookieError):
+    """TPM credential or secret derivation failed."""
+
+
 class OpenConnectError(VpnCookieError):
     """OpenConnect failed to start or exited unsuccessfully."""

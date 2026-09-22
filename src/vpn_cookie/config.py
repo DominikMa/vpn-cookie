@@ -47,7 +47,25 @@ class FidoCredentialConfig:
 
 
 @dataclass
+class TpmCredentialConfig:
+    public: str
+    private: str
+    hmac_salt: str
+    mechanism: str = "hmac-tools"
+    primary_template_version: int = 1
+    requires_pin: bool = True
+    password: PasswordConfig = field(default_factory=PasswordConfig)
+
+
+@dataclass
+class TpmConfig:
+    device: str = "/dev/tpmrm0"
+    credentials: list[TpmCredentialConfig] = field(default_factory=list)
+
+
+@dataclass
 class BrowserConfig:
+    headless: bool = True
     width: int = 900
     height: int = 720
     executable_path: str | None = None
@@ -74,6 +92,7 @@ class AppConfig:
     username: str = ""
     cookie_name: str = DEFAULT_COOKIE_NAME
     fido: FidoConfig = field(default_factory=FidoConfig)
+    tpm: TpmConfig = field(default_factory=TpmConfig)
     password: PasswordConfig = field(default_factory=PasswordConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     routing: RoutingConfig = field(default_factory=RoutingConfig)
@@ -130,6 +149,26 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
         origin=fido_data.get("origin", "https://vpn-cookie.local"),
         credentials=credential_entries,
     )
+    tpm_data = data.get("tpm", {})
+    tpm_credentials = []
+    for entry in tpm_data.get("credentials", []):
+        entry_data = dict(entry)
+        entry_password = PasswordConfig(**entry_data.get("password", {}))
+        tpm_credentials.append(
+            TpmCredentialConfig(
+                public=entry_data["public"],
+                private=entry_data["private"],
+                hmac_salt=entry_data["hmac_salt"],
+                mechanism=entry_data.get("mechanism", "hmac-tools"),
+                primary_template_version=entry_data.get("primary_template_version", 1),
+                requires_pin=entry_data.get("requires_pin", True),
+                password=entry_password,
+            )
+        )
+    tpm = TpmConfig(
+        device=tpm_data.get("device", "/dev/tpmrm0"),
+        credentials=tpm_credentials,
+    )
     browser = BrowserConfig(**data.get("browser", {}))
     routing = RoutingConfig(**data.get("routing", {}))
     openconnect = OpenConnectConfig(**data.get("openconnect", {}))
@@ -138,6 +177,7 @@ def config_from_dict(data: dict[str, Any]) -> AppConfig:
         "username": data.get("username", ""),
         "cookie_name": data.get("cookie_name", DEFAULT_COOKIE_NAME),
         "fido": fido,
+        "tpm": tpm,
         "password": password,
         "browser": browser,
         "routing": routing,

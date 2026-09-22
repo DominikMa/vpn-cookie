@@ -15,12 +15,12 @@ from vpn_cookie.errors import BrowserError
 USERNAME_SELECTORS = [
     'input[name="username"]',
     'input[name="user"]',
-    'input#username',
+    "input#username",
     'input[type="text"]',
 ]
 PASSWORD_SELECTORS = [
     'input[name="password"]',
-    'input#password',
+    "input#password",
     'input[type="password"]',
 ]
 SUBMIT_SELECTORS = [
@@ -65,18 +65,25 @@ def _click_first(page, selectors: list[str]) -> bool:
     return False
 
 
-def login_and_extract_cookie(config: AppConfig, password: str | None = None, timeout_seconds: int = 300) -> str:
+def login_and_extract_cookie(
+    config: AppConfig,
+    password: str | None = None,
+    timeout_seconds: int = 300,
+    headless: bool | None = None,
+) -> str:
     context = None
     user_data_dir = mkdtemp(prefix="vpn-cookie-chromium-")
+    run_headless = config.browser.headless if headless is None else headless
     try:
         with sync_playwright() as playwright:
             launch_args = {
-                "headless": False,
+                "headless": run_headless,
                 "viewport": {"width": config.browser.width, "height": config.browser.height},
                 "user_agent": config.browser.useragent,
                 "args": [
                     f"--app={config.vpn_url}",
                     "--window-size=%d,%d" % (config.browser.width, config.browser.height),
+                    "--disable-infobars",
                 ],
             }
             if not config.browser.useragent:
@@ -102,9 +109,14 @@ def login_and_extract_cookie(config: AppConfig, password: str | None = None, tim
                 if value:
                     return value
                 page.wait_for_timeout(1000)
+            hint = (
+                "Rerun with --no-headless to finish the login in a visible browser window, or increase --timeout."
+                if run_headless
+                else "Finish the VPN login in the browser, or increase --timeout."
+            )
             raise BrowserError(
                 f"Timed out after {timeout_seconds}s waiting for cookie {config.cookie_name!r} from {parsed.netloc}. "
-                "Finish the VPN login in the browser, or increase --timeout."
+                + hint
             )
     except BrowserError:
         raise

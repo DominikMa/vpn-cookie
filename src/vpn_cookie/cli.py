@@ -5,12 +5,15 @@ from functools import wraps
 
 import click
 
+from vpn_cookie.backends import available_password, configured_backend_names
 from vpn_cookie.browser import login_and_extract_cookie
 from vpn_cookie.config import AppConfig, default_config_path, load_config, save_config
-from vpn_cookie.crypto import decrypt_password, encrypt_password
-from vpn_cookie.errors import FidoError, VpnCookieError
+from vpn_cookie.crypto import encrypt_password
+from vpn_cookie.errors import VpnCookieError
 from vpn_cookie.fido import derive_secret, register_credential
 from vpn_cookie.openconnect import openconnect_command, run_openconnect
+from vpn_cookie.tpm import derive_secret as derive_tpm_secret
+from vpn_cookie.tpm import register_tpm
 
 
 def _load(path: Path | None) -> AppConfig:
@@ -87,26 +90,45 @@ def fido_register(require_user_verification: bool, config_path: Path | None) -> 
     click.echo(f"Registered FIDO credential and wrote config: {path}")
 
 
+@app.command("tpm-register")
+@_config_option
+@_handle_errors
+def tpm_register(config_path: Path | None) -> None:
+    """Register this machine's hardware TPM for password encryption."""
+    config = _load(config_path)
+    pin = click.prompt("TPM PIN", hide_input=True, confirmation_prompt=True)
+    config = register_tpm(config, pin=pin)
+    path = save_config(config, config_path)
+    click.echo(f"Registered TPM credential and wrote config: {path}")
+
+
 @click.group(no_args_is_help=True)
 def password() -> None:
     """Manage stored VPN passwords."""
 
 
 @password.command("set")
+@click.option(
+    "--backend",
+    type=click.Choice(["fido", "tpm"]),
+    default=None,
+    help="Credential backend to encrypt the VPN password for.",
+)
 @_config_option
 @_handle_errors
-def password_set(config_path: Path | None) -> None:
+def password_set(backend: str | None, config_path: Path | None) -> None:
     """Prompt once for the VPN password and save it encrypted."""
     config = _load(config_path)
+    backend = _password_backend(config, backend)
+    credential, secret = _derive_for_password_set(config, backend)
     password_value = click.prompt(
         "VPN password",
         hide_input=True,
         confirmation_prompt=True,
     )
-    credential, secret = derive_secret(config)
     credential.password = encrypt_password(password_value, secret)
     path = save_config(config, config_path)
-    click.echo(f"Encrypted password saved for connected FIDO credential in: {path}")
+    click.echo(f"Encrypted password saved for {backend.upper()} credential in: {path}")
 
 
 @click.group(no_args_is_help=True)
@@ -177,12 +199,17 @@ def routes_show(config_path: Path | None) -> None:
 @app.command()
 @_config_option
 @click.option("--timeout", default=300, show_default=True, help="Seconds to wait for the VPN cookie.")
+@click.option(
+    "--headless/--no-headless",
+    default=None,
+    help="Run the login browser without a window. Uses the config value by default.",
+)
 @_handle_errors
-def login(config_path: Path | None, timeout: int) -> None:
+def login(config_path: Path | None, timeout: int, headless: bool | None) -> None:
     """Open the VPN login browser and print the webvpn cookie."""
     config = _load(config_path)
     password_value = _configured_password(config)
-    click.echo(login_and_extract_cookie(config, password_value, timeout_seconds=timeout))
+    click.echo(login_and_extract_cookie(config, password_value, timeout_seconds=timeout, headless=headless))
 
 
 @app.command()
@@ -198,6 +225,11 @@ def login(config_path: Path | None, timeout: int) -> None:
     multiple=True,
     help="Extra argument passed to OpenConnect. Repeat for multiple arguments.",
 )
+@click.option(
+    "--headless/--no-headless",
+    default=None,
+    help="Run the login browser without a window. Uses the config value by default.",
+)
 @_handle_errors
 def connect(
     config_path: Path | None,
@@ -208,11 +240,12 @@ def connect(
     sudo: bool,
     background: bool,
     openconnect_arg: tuple[str, ...],
+    headless: bool | None,
 ) -> None:
     """Log in with the browser, then start OpenConnect with the retrieved cookie."""
     config = _load(config_path)
     password_value = _configured_password(config)
-    cookie = login_and_extract_cookie(config, password_value, timeout_seconds=timeout)
+    cookie = login_and_extract_cookie(config, password_value, timeout_seconds=timeout, headless=headless)
     command = openconnect_command(
         config,
         executable=openconnect,
@@ -230,27 +263,33 @@ app.add_command(routes)
 
 
 def _configured_password(config: AppConfig) -> str | None:
-    if not config.fido.credentials:
-        return None
-    try:
-        derived = derive_secret(config)
-    except FidoError as error:
-        click.echo(f"Password prefill skipped: {error}", err=True)
-        return None
-    credential, secret = derived
-    if not credential.password.nonce or not credential.password.ciphertext:
-        click.echo(
-            "Password prefill skipped: the connected FIDO key has no saved encrypted password. "
-            "Run `vpn-cookie password set` for this key, or enter the password manually.",
-            err=True,
+    return available_password(config, on_skip=lambda message: click.echo(message, err=True))
+
+
+def _password_backend(config: AppConfig, backend: str | None) -> str:
+    configured = configured_backend_names(config)
+    if backend is not None:
+        if backend not in configured:
+            raise click.ClickException(
+                f"No {backend.upper()} credential is configured. "
+                f"Run `vpn-cookie {backend}-register` first."
+            )
+        return backend
+    if not configured:
+        raise click.ClickException(
+            "No password encryption backend is configured. "
+            "Run `vpn-cookie fido-register` or `vpn-cookie tpm-register` first."
         )
-        return None
-    try:
-        return decrypt_password(credential.password, secret)
-    except Exception as error:
-        click.echo(
-            f"Password prefill skipped: saved password could not be decrypted with the connected FIDO key ({error}). "
-            "Enter the password manually, or run `vpn-cookie password set` again for this key.",
-            err=True,
+    if len(configured) > 1:
+        raise click.ClickException(
+            "Both FIDO and TPM credentials are configured. "
+            "Choose where to store this password with `--backend fido` or `--backend tpm`."
         )
-        return None
+    return configured[0]
+
+
+def _derive_for_password_set(config: AppConfig, backend: str):
+    if backend == "fido":
+        return derive_secret(config)
+    pin = click.prompt("TPM PIN", hide_input=True)
+    return derive_tpm_secret(config, pin=pin)
